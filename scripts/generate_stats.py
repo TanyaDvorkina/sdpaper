@@ -106,6 +106,7 @@ def extract_monomer_string(hits, start, end, orientation, name, avg_monomer_len)
         return ""
     print(start, end, hits[l]["s"], hits[r]["e"], l, r)
     res = ""
+    res_lst = []
     num = 0
     for i in range(l, r + 1):
         c = convert_to_abc(hits[i]["qid"])
@@ -118,21 +119,23 @@ def extract_monomer_string(hits, start, end, orientation, name, avg_monomer_len)
             c = c[:-1].lower()
             print("wrong orientation")
         res += c
+        res_lst.append({"m": c, "s": hits[i]["s"], "e": hits[i]["e"], "i": hits[i]["idnt"]})
         num += 1
         if i != r:
             dist = max(0, hits[i + 1]["s"] - hits[i]["e"])
             q, rr = divmod(dist, avg_monomer_len)
             m_num = int(q + int(2 * rr >= avg_monomer_len))
-            if rr >= avg_monomer_len:
-                print(rr)
+            start = hits[i]["e"]
             for _ in range(m_num):
                 res += "?"
+                res_lst.append({"m": "?", "s": start, "e": min(start + avg_monomer_len, hits[i + 1]["s"]), "i": -1 })
                 num += 1
     ind = 0
     if orientation == "-":
         res = res[::-1]
+        res_lst = res_lst[::-1]
     print(num, num/12)
-    return res
+    return res, res_lst
 
 def remove_corner_errors(niceAlign, stats_sq):
     if niceAlign["query_aligned"][0] == "-":
@@ -172,6 +175,55 @@ def remove_corner_errors(niceAlign, stats_sq):
             i -= 1
     return stats_sq
 
+def build_lst_alignment(ref_monomer_lst, read_monomer_lst, niceAlign):
+    res = []
+    read_ind, ref_ind = 0, 0
+    for i in range(len(niceAlign["matched_aligned"])):
+        if niceAlign["matched_aligned"][i] != "-":
+            res.append([read_monomer_lst[read_ind]["m"], read_monomer_lst[read_ind]["s"], read_monomer_lst[read_ind]["e"], read_monomer_lst[read_ind]["i"], \
+                        ref_monomer_lst[ref_ind]["m"], ref_monomer_lst[ref_ind]["s"], ref_monomer_lst[ref_ind]["e"], ref_monomer_lst[ref_ind]["i"]])
+            read_ind += 1
+            ref_ind += 1
+        elif niceAlign["query_aligned"][i] == "-" and read_ind > 0 and read_ind < len(read_monomer_lst) - 1:
+            res.append(["-", read_monomer_lst[read_ind-1]["e"], read_monomer_lst[read_ind]["s"], -1, \
+                        ref_monomer_lst[ref_ind]["m"], ref_monomer_lst[ref_ind]["s"], ref_monomer_lst[ref_ind]["e"], ref_monomer_lst[ref_ind]["i"]])
+            ref_ind += 1
+        elif niceAlign["target_aligned"][i] == "-" and ref_ind > 0 and ref_ind < len(ref_monomer_lst) - 1:
+            res.append([read_monomer_lst[read_ind]["m"], read_monomer_lst[read_ind]["s"], read_monomer_lst[read_ind]["e"], read_monomer_lst[read_ind]["i"], \
+                        "-", ref_monomer_lst[ref_ind-1]["e"], ref_monomer_lst[ref_ind]["s"], -1])
+            read_ind += 1
+        elif niceAlign["query_aligned"][i] == "-":
+            ref_ind += 1
+        elif niceAlign["target_aligned"][i] == "-":
+            read_ind += 1
+    return res
+
+def calculate_stats(niceAlign, stats_sq):
+    for i in range(len(niceAlign["query_aligned"])):
+        if niceAlign["query_aligned"][i] == niceAlign["target_aligned"][i]:
+            if niceAlign["query_aligned"][i] == "?":
+                stats_sq["?"]["?"] += 1
+            else:
+                stats_sq["m"]["m"] += 1
+        elif niceAlign["query_aligned"][i] == "-":
+            if niceAlign["target_aligned"][i] == "?":
+                stats_sq["-"]["?"] += 1
+            else:
+                stats_sq["-"]["m"] += 1
+        elif niceAlign["target_aligned"][i] == "-":
+            if niceAlign["query_aligned"][i] == "?":
+                stats_sq["?"]["-"] += 1
+            else:
+                stats_sq["m"]["-"] += 1
+        else:
+            if niceAlign["target_aligned"][i] == "?":
+                stats_sq["m"]["?"] += 1
+            elif niceAlign["query_aligned"][i] == "?":
+                stats_sq["?"]["m"] += 1
+            else:
+                stats_sq["m"]["mm"] += 1
+    return stats_sq
+
 def cnt_edist(lst):
     if len(str(lst[0])) == 0:
         return -1
@@ -186,8 +238,8 @@ def cnt_edist(lst):
     return niceAlign
 
 def get_monomer_alignment(ref_hits, read_hits, ref_start, ref_end, read_start, read_end, name, orientation, avg_monomer_len):
-    ref_monomer_str = extract_monomer_string(ref_hits, ref_start, ref_end, "+", name, avg_monomer_len)
-    read_monomer_str = extract_monomer_string(read_hits, read_start, read_end, orientation, name, avg_monomer_len)
+    ref_monomer_str, ref_monomer_lst = extract_monomer_string(ref_hits, ref_start, ref_end, "+", name, avg_monomer_len)
+    read_monomer_str, read_monomer_lst = extract_monomer_string(read_hits, read_start, read_end, orientation, name, avg_monomer_len)
     print("Ref sz = " + str(len(ref_monomer_str)) + " Approx " + str((ref_end - ref_start)//avg_monomer_len))
     print("Read sz = " + str(len(read_monomer_str)) + " Approx " + str((read_end - read_start)//avg_monomer_len))
     if "'" in ref_monomer_str or "'" in read_monomer_str:
@@ -214,33 +266,10 @@ def get_monomer_alignment(ref_hits, read_hits, ref_start, ref_end, read_start, r
             stats["mm_pairs"].append([c, "?"])
         exit(-1)
         return -1, -1
-
-    for i in range(len(niceAlign["query_aligned"])):
-        if niceAlign["query_aligned"][i] == niceAlign["target_aligned"][i]:
-            if niceAlign["query_aligned"][i] == "?":
-                stats_sq["?"]["?"] += 1
-            else:
-                stats_sq["m"]["m"] += 1
-        elif niceAlign["query_aligned"][i] == "-":
-            if niceAlign["target_aligned"][i] == "?":
-                stats_sq["-"]["?"] += 1
-            else:
-                stats_sq["-"]["m"] += 1
-        elif niceAlign["target_aligned"][i] == "-":
-            if niceAlign["query_aligned"][i] == "?":
-                stats_sq["?"]["-"] += 1
-            else:
-                stats_sq["m"]["-"] += 1
-        else:
-            if niceAlign["target_aligned"][i] == "?":
-                stats_sq["m"]["?"] += 1
-            elif niceAlign["query_aligned"][i] == "?":
-                stats_sq["?"]["m"] += 1
-            else:
-                stats_sq["m"]["mm"] += 1
-
+    monomer_lst_alignment = build_lst_alignment(ref_monomer_lst, read_monomer_lst, niceAlign)
+    stats_sq = calculate_stats(niceAlign, stats_sq)
     stats_sq = remove_corner_errors(niceAlign, stats_sq)
-    return stats_sq
+    return stats_sq, monomer_lst_alignment
 
 def get_avg_len(seqs):
     res = 0
@@ -266,6 +295,7 @@ ref_name = list(ref_hits.keys())[0]
 overall_stats = {"?": {"?": 0, "m": 0, "mm": 0, "-": 0}, "m": {"?": 0, "m": 0, "mm": 0, "-": 0}, "-": {"?": 0, "m": 0, "mm": 0, "-": 0}}
 good_reads = load_good_reads()
 aligned_len = 0
+full_monomer_lst_aln = []
 with open(tm_res, "r") as fin:
     for ln in fin.readlines():
         lst = ln.strip().split()
@@ -283,7 +313,7 @@ with open(tm_res, "r") as fin:
                 orient = "-"
             aligned_len += read_end - read_start
             print(name, orient)
-            stats = get_monomer_alignment(ref_hits[ref_name], reads_hits[name],\
+            stats, monomer_lst_aln = get_monomer_alignment(ref_hits[ref_name], reads_hits[name],\
                                     ref_start, ref_end, read_start, read_end, name, orient, avg_monomer_len)
             print(stats)
             for p1 in stats:
@@ -291,6 +321,12 @@ with open(tm_res, "r") as fin:
                     overall_stats[p1][p2] += stats[p1][p2]
             print("")
 
+            for lst in monomer_lst_aln:
+                full_monomer_lst_aln.append(name + "\t" + "\t".join([str(x) for x in lst]))
+
+with open(os.path.join(path, prefix, "monomer_alns.tsv"), "w") as fout:
+    fout.write("\n".join(full_monomer_lst_aln))
+ 
 print("Aligned len ", aligned_len, " Total len ", total_len, " %", aligned_len*100/total_len)
 total_syms = 0
 for p1 in overall_stats:
