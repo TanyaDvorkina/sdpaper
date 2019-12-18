@@ -1,0 +1,3 @@
+[submodule "solvers/alpha-CENTAURI"]
+	path = solvers/alpha-CENTAURI
+	url = git@github.com:volkansevim/alpha-CENTAURI.git
