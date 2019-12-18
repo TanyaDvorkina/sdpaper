@@ -1,3 +1,6 @@
 [submodule "solvers/alpha-CENTAURI"]
 	path = solvers/alpha-CENTAURI
 	url = git@github.com:volkansevim/alpha-CENTAURI.git
+[submodule "solvers/stringdecomposer"]
+	path = solvers/stringdecomposer
+	url = git@github.com:TanyaDvorkina/stringdecomposer.git
