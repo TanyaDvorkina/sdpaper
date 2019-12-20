@@ -22,24 +22,36 @@ import seaborn as sns; sns.set()
 import pandas as pd
 
 
-prefix = "AC_hmmer"
+prefix = "SD"
 path = "/Sid/tdvorkina/monomers/sdpaper"
-data_map = {"SD":{"read_hits": os.path.join(path, "SD", "decomposition_reads.tsv"), "ref_hits": os.path.join(path, "SD", "decomposition_cenx_flye_polished.tsv")},
-            "AC_hmmer": {"read_hits": os.path.join(path, prefix, "decomposition_reads.tsv"), "ref_hits": os.path.join(path, "SD", "decomposition_cenx_flye_polished.tsv")}}
-
-tm_res = "/Bmo/miheenko/git/tandemQUAST/cenx_flye_polished/cenx-flye-polished_alignment.bed"
+data_map = {"SD":{"read_hits": os.path.join(path, "SD", "decomposition_reads.tsv"), "ref_hits": os.path.join(path, "SD", "decomposition_cenX_t2t.tsv")},
+            "AC_hmmer": {"read_hits": os.path.join(path, prefix, "decomposition_reads.tsv"), "ref_hits": os.path.join(path, "SD", "decomposition_cenX_t2t.tsv")}}
 reads_file = os.path.join(path, "data/centromeric_reads.fasta")
-ref_file = "/Bmo/miheenko/git/tandemQUAST/assemblies/cenx_flye_polished.fasta"
+
+# tm_res = "/Bmo/miheenko/git/tandemQUAST/cenx_flye_polished/cenx-flye-polished_alignment.bed"
+# ref_file = "/Bmo/miheenko/git/tandemQUAST/assemblies/cenx_flye_polished.fasta"
+
+tm_res = "/Bmo/miheenko/git/tandemQUAST/t2t7/cenx-t2t7_alignment.bed"
+ref_file = "/Bmo/miheenko/git/tandemQUAST/t2t7/cenx-t2t7.masked.fa"
+
 monomers_file = "/home/tdvorkina/projects/centroFlye/longreads_decomposer/git/sdpaper/data/DXZ1_inferred_monomers_single.fa" 
 
 def load_good_reads():
-    trash = []
-    filename = os.path.join(path, "data", "gooood_reads.txt")
+    trash = ["86722ef4"]
+    filename = os.path.join(path, "data", "gooood_reads_t2t7.txt")
     res = []
     with open(filename, "r") as fin:
         for ln in fin.readlines():
-            res.append(ln.strip())
+            if len(ln) > 1:
+                good_read = True
+                for r in trash:
+                    if ln.startswith(r):
+                        good_read = False
+                        break
+                if good_read:
+                    res.append(ln.strip())
     print("Reliable reads " + str(len(res)))
+    #exit(-1)
     return res
 
 def replacer(r):
@@ -103,7 +115,7 @@ def extract_monomer_string(hits, start, end, orientation, name, avg_monomer_len)
     l, r = find_ends_indexes(hits, start, end, name)
     if l > r:
         print("No alignments!")
-        return ""
+        return "", []
     print(start, end, hits[l]["s"], hits[r]["e"], l, r)
     res = ""
     res_lst = []
@@ -175,21 +187,30 @@ def remove_corner_errors(niceAlign, stats_sq):
             i -= 1
     return stats_sq
 
-def build_lst_alignment(ref_monomer_lst, read_monomer_lst, niceAlign):
+def build_lst_alignment(ref_monomer_lst, read_monomer_lst, niceAlign, orient):
     res = []
     read_ind, ref_ind = 0, 0
     for i in range(len(niceAlign["matched_aligned"])):
         if niceAlign["matched_aligned"][i] != "-":
-            res.append([read_monomer_lst[read_ind]["m"], read_monomer_lst[read_ind]["s"], read_monomer_lst[read_ind]["e"], read_monomer_lst[read_ind]["i"], \
+            r_start, r_end = read_monomer_lst[read_ind]["s"], read_monomer_lst[read_ind]["e"]
+            if orient == "-":
+                r_start, r_end = r_end, r_start
+            res.append([read_monomer_lst[read_ind]["m"], r_start, r_end, read_monomer_lst[read_ind]["i"], \
                         ref_monomer_lst[ref_ind]["m"], ref_monomer_lst[ref_ind]["s"], ref_monomer_lst[ref_ind]["e"], ref_monomer_lst[ref_ind]["i"]])
             read_ind += 1
             ref_ind += 1
         elif niceAlign["query_aligned"][i] == "-" and read_ind > 0 and read_ind < len(read_monomer_lst) - 1:
-            res.append(["-", read_monomer_lst[read_ind-1]["e"], read_monomer_lst[read_ind]["s"], -1, \
+            r_start, r_end = read_monomer_lst[read_ind-1]["e"], read_monomer_lst[read_ind]["s"]
+            if orient == "-":
+                r_start, r_end = r_end, r_start  
+            res.append(["-", r_start, r_end, -1, \
                         ref_monomer_lst[ref_ind]["m"], ref_monomer_lst[ref_ind]["s"], ref_monomer_lst[ref_ind]["e"], ref_monomer_lst[ref_ind]["i"]])
             ref_ind += 1
         elif niceAlign["target_aligned"][i] == "-" and ref_ind > 0 and ref_ind < len(ref_monomer_lst) - 1:
-            res.append([read_monomer_lst[read_ind]["m"], read_monomer_lst[read_ind]["s"], read_monomer_lst[read_ind]["e"], read_monomer_lst[read_ind]["i"], \
+            r_start, r_end = read_monomer_lst[read_ind]["s"], read_monomer_lst[read_ind]["e"]
+            if orient == "-":
+                r_start, r_end = r_end, r_start
+            res.append([read_monomer_lst[read_ind]["m"], r_start, r_end, read_monomer_lst[read_ind]["i"], \
                         "-", ref_monomer_lst[ref_ind-1]["e"], ref_monomer_lst[ref_ind]["s"], -1])
             read_ind += 1
         elif niceAlign["query_aligned"][i] == "-":
@@ -242,6 +263,8 @@ def get_monomer_alignment(ref_hits, read_hits, ref_start, ref_end, read_start, r
     read_monomer_str, read_monomer_lst = extract_monomer_string(read_hits, read_start, read_end, orientation, name, avg_monomer_len)
     print("Ref sz = " + str(len(ref_monomer_str)) + " Approx " + str((ref_end - ref_start)//avg_monomer_len))
     print("Read sz = " + str(len(read_monomer_str)) + " Approx " + str((read_end - read_start)//avg_monomer_len))
+    if len(ref_monomer_lst) == 0 or len(read_monomer_lst) == 0:
+        return None, None
     if "'" in ref_monomer_str or "'" in read_monomer_str:
         print(ref_monomer_str)
         print(read_monomer_str)
@@ -258,6 +281,7 @@ def get_monomer_alignment(ref_hits, read_hits, ref_start, ref_end, read_start, r
         print("WAT")
         print(l,r)
         exit(-1)
+        #return None, None
 
     niceAlign = cnt_edist([read_monomer_str, ref_monomer_str])
     stats_sq = {"?": {"?": 0, "m": 0, "mm": 0, "-": 0}, "m": {"?": 0, "m": 0, "mm": 0, "-": 0}, "-": {"?": 0, "m": 0, "mm": 0, "-": 0}}
@@ -266,9 +290,17 @@ def get_monomer_alignment(ref_hits, read_hits, ref_start, ref_end, read_start, r
             stats["mm_pairs"].append([c, "?"])
         exit(-1)
         return -1, -1
-    monomer_lst_alignment = build_lst_alignment(ref_monomer_lst, read_monomer_lst, niceAlign)
+    monomer_lst_alignment = build_lst_alignment(ref_monomer_lst, read_monomer_lst, niceAlign, orientation)
     stats_sq = calculate_stats(niceAlign, stats_sq)
     stats_sq = remove_corner_errors(niceAlign, stats_sq)
+    if stats_sq["m"]["mm"] > 0:
+        print("MMM")
+    if stats_sq["?"]["m"] > 0 or stats_sq["m"]["?"] > 0:
+        print("MM?")
+    if stats_sq["-"]["m"] > 0 or stats_sq["-"]["?"] > 0:
+        print("Del")
+    if stats_sq["m"]["-"] > 0 or stats_sq["?"]["-"] > 0:
+        print("Ins")
     return stats_sq, monomer_lst_alignment
 
 def get_avg_len(seqs):
@@ -278,6 +310,7 @@ def get_avg_len(seqs):
     res //= len(seqs)
     return res
 
+good_reads = load_good_reads()
 ref = load_fasta(ref_file)
 
 reads = load_fasta(reads_file)
@@ -293,7 +326,6 @@ ref_hits = load_string_decomposition(data_map[prefix]["ref_hits"], 70)
 ref_name = list(ref_hits.keys())[0]
 
 overall_stats = {"?": {"?": 0, "m": 0, "mm": 0, "-": 0}, "m": {"?": 0, "m": 0, "mm": 0, "-": 0}, "-": {"?": 0, "m": 0, "mm": 0, "-": 0}}
-good_reads = load_good_reads()
 aligned_len = 0
 full_monomer_lst_aln = []
 with open(tm_res, "r") as fin:
@@ -311,16 +343,15 @@ with open(tm_res, "r") as fin:
             if read_start > read_end:
                 read_start, read_end = read_end, read_start
                 orient = "-"
-            aligned_len += read_end - read_start
             print(name, orient)
             stats, monomer_lst_aln = get_monomer_alignment(ref_hits[ref_name], reads_hits[name],\
                                     ref_start, ref_end, read_start, read_end, name, orient, avg_monomer_len)
             print(stats)
+            aligned_len += read_end - read_start
             for p1 in stats:
                 for p2 in stats[p1]:
                     overall_stats[p1][p2] += stats[p1][p2]
             print("")
-
             for lst in monomer_lst_aln:
                 full_monomer_lst_aln.append(name + "\t" + "\t".join([str(x) for x in lst]))
 
