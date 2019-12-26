@@ -18,6 +18,8 @@ import numpy as np; np.random.seed(0)
 import seaborn as sns; sns.set()
 import pandas as pd
 
+import random
+
 import edlib
 import re
 
@@ -25,13 +27,13 @@ prefix = "SD"
 path = "/Sid/tdvorkina/monomers/sdpaper"
 data_map = {"SD":{"read_hits": os.path.join(path, "SD", "decomposition_reads.tsv"), "ref_hits": os.path.join(path, "SD", "decomposition_cenX_t2t.tsv")},
             "AC_hmmer": {"read_hits": os.path.join(path, prefix, "decomposition_reads.tsv"), "ref_hits": os.path.join(path, "SD", "decomposition_cenX_t2t.tsv")}}
-reads_file = os.path.join(path, "data/centromeric_reads.fasta")
+reads_file = os.path.join(path, "data_extended/centromeric_reads.fasta")
 
-ref_file = "/Bmo/miheenko/git/tandemQUAST/t2t7/cenx-t2t7.masked.fa"
-monomers_file = "/home/tdvorkina/projects/centroFlye/longreads_decomposer/git/sdpaper/data/DXZ1_inferred_monomers_single.fa"
+ref_file =  os.path.join(path, "data_extended/cenx-t2t7.fa")
+monomers_file = "../data/DXZ1_inferred_monomers_single.fa"
 
-abnormal_hors = {"FK": ["ABCDEFGHIJFGHIJKL", "ABCDEFGHIJKGHIJKL"]} #, "KL": ["ABCDEFGHIJKA", "ABCDEFGHIJLA"]}
-abnormal_pos = {"FK": -6, "KL": -2}
+abnormal_hors = {"KL": ["ABCDEFGHIJKA", "ABCDEFGHIJLA"], "FK": ["ABCDEFGHIJFGHIJKL", "ABCDEFGHIJKGHIJKL"]}
+abnormal_pos = {"FK": -6, "KL": -1}
 
 def replacer(r):
     chars = ["_", "=", "|", ":"]
@@ -62,7 +64,8 @@ def load_alns(filename):
     with open(filename, "r") as fin:
         for ln in fin.readlines():
             read, m, m_s, m_e, m_i, tm, tm_s, tm_e, tm_i = ln.strip().split("\t")
-            res_read.append({"r": read, "m": m, "m_s": int(m_s), "m_e": int(m_e), "m_i": float(m_i)})
+            res_read.append({"r": read, "m": m, "m_s": int(m_s), "m_e": int(m_e), "m_i": float(m_i),\
+                             "tm": tm, "tm_s": int(tm_s), "tm_e": int(tm_e), "tm_i": float(tm_i), "c": None})
     return res_read
 
 def load_string_decomposition(filename, identity = 70):
@@ -101,10 +104,27 @@ def aai(ar):
     aai /= max(len(p1), len(p2))
     return aai*100
 
-def get_abnormal_hor_monomer(alns, seqs, hor_tp):
+def get_color(seq, monomers, hor_tp):
+    res = []
+    for m in monomers:
+        for c in list(hor_tp):
+            if m.startswith(c):
+                s1 = monomers[m].seq
+                s2 = seq
+                res.append(aai([s1, s2]))
+    color = "r"
+    for it in res:
+        if it > 95:
+            color = "b"
+    return color
+
+def get_abnormal_hor_monomer_reads(alns, seqs, ref, monomers, hor_tp):
     prev_read = ""
     cur_seq = ""
     res = []
+    mp = {}
+    for ah in abnormal_hors[hor_tp]:
+        mp[ah] = 0
     for i in range(len(alns)):
         a = alns[i]
         if a["r"] != prev_read:
@@ -112,33 +132,82 @@ def get_abnormal_hor_monomer(alns, seqs, hor_tp):
             prev_read = a["r"]
         cur_seq += a["m"]
         if cur_seq[-len(abnormal_hors[hor_tp][0]):] in abnormal_hors[hor_tp]:
-            print(cur_seq[-len(abnormal_hors[hor_tp][0]):])
+            #print(cur_seq[-len(abnormal_hors[hor_tp][0]):])
+            mp[cur_seq[-len(abnormal_hors[hor_tp][0]):]] += 1
             s, e = alns[i + abnormal_pos[hor_tp]]["m_s"], alns[i + abnormal_pos[hor_tp]]["m_e"]
+            ts, te = alns[i + abnormal_pos[hor_tp]]["tm_s"], alns[i + abnormal_pos[hor_tp]]["tm_e"]
+            color = get_color(ref[ts: te], monomers, hor_tp)
             if s < e:
-                print(s, e, str(seqs[a["r"]].seq[s:e]))
-                res.append({"hor": cur_seq[abnormal_pos[hor_tp]], "seq": seqs[a["r"]].seq[s:e]})
+                res.append({"hor": cur_seq[abnormal_pos[hor_tp]], \
+                            "seq": seqs[a["r"]].seq[s:e], \
+                            "c": color})
             else:
-                print(s, e, str(seqs[a["r"]].seq[e:s].reverse_complement()))
-                res.append({"hor": cur_seq[abnormal_pos[hor_tp]], "seq": seqs[a["r"]].seq[e:s].reverse_complement()})
+                res.append({"hor": cur_seq[abnormal_pos[hor_tp]], \
+                            "seq": seqs[a["r"]].seq[e:s].reverse_complement(), \
+                            "c": color})
     print("Abnormal num ", len(res))
+    print(mp)
     return res
 
-def calculate_identities_mon(alns, monomers, hor_tp):
+def get_abnormal_hor_monomer_ref(alns, seqs, hor_tp):
+    prev_read = ""
+    cur_seq = ""
+    res = []
+    mp = {}
+    for ah in abnormal_hors[hor_tp]:
+        mp[ah] = 0
+    for i in range(len(alns)):
+        a = alns[i]
+        if a["r"] != prev_read:
+            cur_seq = ""
+            prev_read = a["r"]
+        cur_seq += a["m"]
+        if cur_seq[-len(abnormal_hors[hor_tp][0]):] in abnormal_hors[hor_tp]:
+            mp[cur_seq[-len(abnormal_hors[hor_tp][0]):]] += 1
+            s, e = alns[i + abnormal_pos[hor_tp]]["m_s"], alns[i + abnormal_pos[hor_tp]]["m_e"]
+            color = "b"
+            if s < e:
+                res.append({"hor": cur_seq[abnormal_pos[hor_tp]], \
+                            "seq": seqs[a["r"]].seq[s:e], \
+                            "c": color})
+            else:
+                res.append({"hor": cur_seq[abnormal_pos[hor_tp]], \
+                            "seq": seqs[a["r"]].seq[e:s].reverse_complement(), \
+                            "c": color})
+    print("Abnormal num ", len(res))
+    print(mp)
+    return res
+
+def cnt_edist(lst):
+    if len(str(lst[0])) == 0:
+        return -1
+    if len(str(lst[1])) == 0:
+        return -1
+    result = edlib.align(str(lst[0]), str(lst[1]), mode="NW", task="path")
+    niceAlign = edlib.getNiceAlignment(result, str(lst[0]), str(lst[1]))
+    print(niceAlign["query_aligned"])
+    print(niceAlign["matched_aligned"])
+    print(niceAlign["target_aligned"])
+    print("")
+    return niceAlign
+
+def calculate_identities_mon(alns, monomers, hor_tp, s3):
     ms = list(hor_tp)
-    res = {}
+    res = {"b": {}, "r": {}}
     for c in ms:
-        res[c] = []
+        res["b"][c] = []
+        res["r"][c] = []
     for a in alns:
         for m in monomers:
             for c in list(hor_tp):
                 if m.startswith(c):
                     s1 = monomers[m].seq
                     s2 = a["seq"]
-                    res[c].append(aai([s1, s2]))
-            s1 = monomers[m].seq
-            s2 = a["seq"]
-        #     print(m, aai([s1, s2]))
-        # print("")
+                    res[a["c"]][c].append(aai([s1, s2]))
+                    print(c, "(first row)", aai([s1, s2]))
+                    cnt_edist([s1, s2])
+        print("K+*", "(first row)", aai([s3, a["seq"]]))
+        cnt_edist([s3, a["seq"]])
     s1, s2 = None, None
     mons = list(hor_tp)
     for m in monomers:
@@ -146,8 +215,11 @@ def calculate_identities_mon(alns, monomers, hor_tp):
             s1 = monomers[m].seq
         if m.startswith(mons[1]):
             s2 = monomers[m].seq
-    res[mons[0]].append(aai([s1, s2]))
-    res[mons[1]].append(aai([s1, s2]))
+        print("K+*", "(first row)", m, "(third row)", aai([s3, monomers[m].seq]))
+        cnt_edist([s3, monomers[m].seq])
+    if len(res["b"][mons[0]]) < 20:
+        res["b"][mons[0]].append(aai([s1, s2]))
+        res["b"][mons[1]].append(aai([s1, s2]))
     return res
 
 def calculate_identities(alns):
@@ -158,28 +230,29 @@ def calculate_identities(alns):
             res[str(i + 1)][str(j + 1)] = aai([alns[i]["seq"], alns[j]["seq"]])
     return res
 
-
 def draw_plot(idnts, mons, filename):
-    fig = plt.figure()
+    fig = plt.figure(figsize=(20, 20))
     m_lst = list(mons)
-    plt.plot(idnts[m_lst[0]], idnts[m_lst[1]],'bo', alpha=0.5)
+    plt.plot(idnts["b"][m_lst[0]], idnts["b"][m_lst[1]], 'bo', alpha=0.5, label="mapped to HORs 1-4")
+    plt.plot(idnts["r"][m_lst[0]], idnts["r"][m_lst[1]], 'ro', alpha=0.5, label="mapped to HORs 5-12")
     plt.xlabel("Identity " + m_lst[0])
     plt.ylabel("Identity " + m_lst[1])
     plt.xlim(65, 100)
     plt.ylim(65, 100)
+    plt.legend(loc="upper left")
     plt.savefig(filename)
 
 
 def draw_heatmap(idnts, idnts_m, filename):
-    mons = list(idnts_m.keys())
-    for i in range(len(idnts_m[mons[0]]) - 1):
+    mons = list(idnts_m["b"].keys())
+    for i in range(len(idnts_m["b"][mons[0]]) - 1):
         c = mons[0]
-        idnts[str(i + 1)][c] = idnts_m[c][i] 
+        idnts[str(i + 1)][c] = idnts_m["b"][c][i] 
     idnts[mons[1]] = {}
-    for i in range(len(idnts_m[mons[1]]) - 1):
+    for i in range(len(idnts_m["b"][mons[1]]) - 1):
         c = mons[1]
-        idnts[c][str(i + 1)] = idnts_m[c][i]
-    idnts[mons[1]][mons[0]] = idnts_m[mons[1]][-1]
+        idnts[c][str(i + 1)] = idnts_m["b"][c][i]
+    idnts[mons[1]][mons[0]] = idnts_m["b"][mons[1]][-1]
     for m in idnts:
         for mm in idnts[m]:
             idnts[m][mm] = int(idnts[m][mm])
@@ -192,7 +265,7 @@ def draw_heatmap(idnts, idnts_m, filename):
     rows.append(mons[0])
     dtf = dtf.reindex(rows)
     print(dtf)
-    ax = sns.heatmap(dtf, annot=True, fmt="d")
+    ax = sns.heatmap(dtf, annot=True, annot_kws={'size':10}, fmt="d")
     plt.savefig(filename)
 
 
@@ -203,16 +276,24 @@ alns_ref = load_string_decomposition(data_map[prefix]["ref_hits"])
 reads = load_fasta(reads_file, True)
 monomers = load_fasta(monomers_file)
 
-for h in abnormal_hors:
-    print(h)
-    print("Calculating reads stats")
-    nuc_seqs = get_abnormal_hor_monomer(alns_read, reads, h)
-    idnts = calculate_identities_mon(nuc_seqs, monomers, h)
-    draw_plot(idnts, h, os.path.join(path, prefix, "reads_" + h + "_plot.png"))
+h = "KL"
+print("Calculating assembly stats")
+nuc_seqs = get_abnormal_hor_monomer_ref(alns_read, reads, h)
+KL = "ACCGTCTGGTTTTTATATGAAGTTCTTTCCTTCACTACCACAGGCCTCAAAGCGGTCCAAATCTCCACTTGCACATTGTAGAAAAAGTGTGTCAAAGCTGCGCTATCAAAGGGAAAGTTCAACTCTGTGAGGTGAATGCAAACATCCCAAAGAAGTTTCTGAGAATGCT"
+idnts_m = calculate_identities_mon(nuc_seqs, monomers, h, KL)
+idnts = calculate_identities(nuc_seqs)
+print(idnts_m)
 
-    print("Calculating assembly stats")
-    nuc_seqs = get_abnormal_hor_monomer(alns_ref, ref, h)
-    idnts_m = calculate_identities_mon(nuc_seqs, monomers, h)
-    idnts = calculate_identities(nuc_seqs)
-    print(idnts_m)
-    draw_heatmap(idnts, idnts_m, os.path.join(path, prefix, "heatmap_" + h + ".png")) 
+h = "FK"
+print(h)
+print("Calculating reads stats")
+nuc_seqs = get_abnormal_hor_monomer_reads(alns_read, reads, ref[ref_name].seq, monomers, h)
+KF = "ACCGTCTGGTTTTTATATGAAGTTCTTTCCTTCACTACCACAGGCCTCAAAGCGGTCCAAATCTCCACTTGCAGATTCTACAAAAAGAGTGATTCCAATCTGCTCTATCAATAGGATTGTTCAACTCCATGAGTTGAATGCCATCCTCACAAAGTCGTTTCTGAGAATGCT"
+idnts_m = calculate_identities_mon(nuc_seqs, monomers, h, KF)
+draw_plot(idnts_m, h, os.path.join(path, prefix, "reads_" + h + "_plot.png"))
+
+print("Calculating assembly stats")
+nuc_seqs = get_abnormal_hor_monomer_ref(alns_ref, ref, h)
+idnts_m = calculate_identities_mon(nuc_seqs, monomers, h, KF)
+idnts = calculate_identities(nuc_seqs)
+draw_heatmap(idnts, idnts_m, os.path.join(path, prefix, "heatmap_" + h + ".png")) 

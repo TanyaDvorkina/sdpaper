@@ -21,7 +21,7 @@ import numpy as np; np.random.seed(0)
 import seaborn as sns; sns.set()
 import pandas as pd
 
-ref_file = "/Bmo/miheenko/git/tandemQUAST/t2t7/cenx-t2t7.masked.fa"
+ref_file = "../data_extended/cenx-t2t7.fa"
 ref_hits_file = "/Sid/tdvorkina/monomers/sdpaper/SD/decomposition_cenX_t2t.tsv"
 
 def load_fasta(filename):
@@ -48,6 +48,7 @@ def load_string_decomposition(filename, identity = 70):
             if idnt > identity:
                 reads_mapping[sseqid].append({"qid": convert_to_abc(qseqid), "s": s, "e": e, "rev": rev, "idnt": idnt})
             else:
+                reads_mapping[sseqid].append({"qid": "?", "s": s, "e": e, "rev": rev, "idnt": idnt})
                 filtered += 1
     for r in reads_mapping:
         reads_mapping[r] = sorted(reads_mapping[r], key=lambda x: (x["s"], -x["e"]))
@@ -83,7 +84,7 @@ def assembly_stats(hits):
     for r in hits:
         df = pd.DataFrame(hits[r])
         fig = plt.figure()
-        ax = sns.violinplot(x="qid", y="idnt", data=df, order=["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"])
+        ax = sns.violinplot(x="qid", y="idnt", data=df, order=["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "?"])
         plt.savefig("ref_mono_d.png")
 
 ref = load_fasta(ref_file)

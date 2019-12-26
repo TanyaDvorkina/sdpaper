@@ -1,0 +1,29 @@
+PATH = "/Sid/tdvorkina/monomers/sdpaper"
+
+rule all:
+    input:
+        expand("{PATH}/AC_hmmer/decomposition_reads.tsv")
+
+rule chop_to_monomer:
+    input:
+        reads = "{PATH}/data_extended/centromeric_reads.fa"
+        hmm = "alpha.hmm"
+        hmmrc = "alpha.rc.hmm"
+    output:
+        "{PATH}/AC_hmmer/inferred_monomers.fa"
+    shell:
+        "cd data \ 
+         && python2 ../solvers/alpha-CENTAURI/src/chop_to_monomers.py {wildcards.reads} {wildcards.hmm} {wildcards.hmmrc} \
+         && mkdir AC_hmmer \
+         && mv inferred_monomers.fa {output} \
+         && cd ../"
+
+rule convert_to_monomer:
+    input:
+        reads = "{PATH}/data_extended/centromeric_reads.fa"
+        monomers = "./data/DXZ1_inferred_monomers_single.fa"
+        dec = "{PATH}/AC_hmmer/inferred_monomers.fa"
+    output:
+         "{PATH}/AC_hmmer/decomposition_reads.tsv"
+    shell:
+        "./scripts/convert_identities.py -s {wildcards.reads} -m {wildcards.monomers} -d {wildcards.dec} -o {output}"

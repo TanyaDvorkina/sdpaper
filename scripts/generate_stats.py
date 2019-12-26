@@ -22,23 +22,29 @@ import seaborn as sns; sns.set()
 import pandas as pd
 
 
-prefix = "SD"
+prefix = "SD" 
+identity_th = 69
 path = "/Sid/tdvorkina/monomers/sdpaper"
 data_map = {"SD":{"read_hits": os.path.join(path, "SD", "decomposition_reads.tsv"), "ref_hits": os.path.join(path, "SD", "decomposition_cenX_t2t.tsv")},
-            "AC_hmmer": {"read_hits": os.path.join(path, prefix, "decomposition_reads.tsv"), "ref_hits": os.path.join(path, "SD", "decomposition_cenX_t2t.tsv")}}
-reads_file = os.path.join(path, "data/centromeric_reads.fasta")
+            "SD_3":{"read_hits": os.path.join(path, "SD_3", "decomposition_reads.tsv"), "ref_hits": os.path.join(path, "SD", "decomposition_cenX_t2t.tsv")},
+            "SD_5":{"read_hits": os.path.join(path, "SD_5", "decomposition_reads.tsv"), "ref_hits": os.path.join(path, "SD", "decomposition_cenX_t2t.tsv")},
+            "SD_8":{"read_hits": os.path.join(path, "SD_8", "decomposition_reads.tsv"), "ref_hits": os.path.join(path, "SD", "decomposition_cenX_t2t.tsv")},
+            "SD_KF":{"read_hits": os.path.join(path, "SD_KF", "decomposition_reads.tsv"), "ref_hits": os.path.join(path, "SD", "decomposition_cenX_t2t_monomerKF.tsv")},
+            "AC_hmmer": {"read_hits": os.path.join(path, prefix, "decomposition_reads.tsv"), "ref_hits": os.path.join(path, "SD", "decomposition_cenX_t2t.tsv")},
+            "AC_hmmer_3": {"read_hits": os.path.join(path, prefix, "decomposition_reads.tsv"), "ref_hits": os.path.join(path, "SD", "decomposition_cenX_t2t.tsv")},
+            "AC_hmmer_5": {"read_hits": os.path.join(path, prefix, "decomposition_reads.tsv"), "ref_hits": os.path.join(path, "SD", "decomposition_cenX_t2t.tsv")},
+            "AC_hmmer_8": {"read_hits": os.path.join(path, prefix, "decomposition_reads.tsv"), "ref_hits": os.path.join(path, "SD", "decomposition_cenX_t2t.tsv")},
+            "AC_hmmer_KF": {"read_hits": os.path.join(path, prefix, "decomposition_reads.tsv"), "ref_hits": os.path.join(path, "SD", "decomposition_cenX_t2t_monomerKF.tsv")}}
+reads_file = os.path.join(path, "data_extended/centromeric_reads.fasta")
 
-# tm_res = "/Bmo/miheenko/git/tandemQUAST/cenx_flye_polished/cenx-flye-polished_alignment.bed"
-# ref_file = "/Bmo/miheenko/git/tandemQUAST/assemblies/cenx_flye_polished.fasta"
+tm_res = os.path.join(path, "data_extended/cenx-t2t7_alignment.bed")
+ref_file = os.path.join(path, "data_extended/cenx-t2t7.fa")
 
-tm_res = "/Bmo/miheenko/git/tandemQUAST/t2t7/cenx-t2t7_alignment.bed"
-ref_file = "/Bmo/miheenko/git/tandemQUAST/t2t7/cenx-t2t7.masked.fa"
-
-monomers_file = "/home/tdvorkina/projects/centroFlye/longreads_decomposer/git/sdpaper/data/DXZ1_inferred_monomers_single.fa" 
+monomers_file = "../data/DXZ1_inferred_monomers_single.fa" 
 
 def load_good_reads():
     trash = ["86722ef4"]
-    filename = os.path.join(path, "data", "gooood_reads_t2t7.txt")
+    filename = os.path.join(path, "data_extended", "gooood_reads_t2t7.txt")
     res = []
     with open(filename, "r") as fin:
         for ln in fin.readlines():
@@ -51,7 +57,6 @@ def load_good_reads():
                 if good_read:
                     res.append(ln.strip())
     print("Reliable reads " + str(len(res)))
-    #exit(-1)
     return res
 
 def replacer(r):
@@ -75,7 +80,7 @@ def load_fasta(filename):
         new_records[replacer(r)] = records[r].upper()
     return new_records
 
-def load_string_decomposition(filename, identity = 55):
+def load_string_decomposition(filename, identity = 65):
     reads_mapping = {}
     with open(filename, "r") as fin:
         for ln in fin.readlines():
@@ -281,7 +286,6 @@ def get_monomer_alignment(ref_hits, read_hits, ref_start, ref_end, read_start, r
         print("WAT")
         print(l,r)
         exit(-1)
-        #return None, None
 
     niceAlign = cnt_edist([read_monomer_str, ref_monomer_str])
     stats_sq = {"?": {"?": 0, "m": 0, "mm": 0, "-": 0}, "m": {"?": 0, "m": 0, "mm": 0, "-": 0}, "-": {"?": 0, "m": 0, "mm": 0, "-": 0}}
@@ -293,14 +297,6 @@ def get_monomer_alignment(ref_hits, read_hits, ref_start, ref_end, read_start, r
     monomer_lst_alignment = build_lst_alignment(ref_monomer_lst, read_monomer_lst, niceAlign, orientation)
     stats_sq = calculate_stats(niceAlign, stats_sq)
     stats_sq = remove_corner_errors(niceAlign, stats_sq)
-    if stats_sq["m"]["mm"] > 0:
-        print("MMM")
-    if stats_sq["?"]["m"] > 0 or stats_sq["m"]["?"] > 0:
-        print("MM?")
-    if stats_sq["-"]["m"] > 0 or stats_sq["-"]["?"] > 0:
-        print("Del")
-    if stats_sq["m"]["-"] > 0 or stats_sq["?"]["-"] > 0:
-        print("Ins")
     return stats_sq, monomer_lst_alignment
 
 def get_avg_len(seqs):
@@ -321,7 +317,7 @@ for r in reads:
 monomers = load_fasta(monomers_file)
 avg_monomer_len = get_avg_len(monomers)
 
-reads_hits = load_string_decomposition(data_map[prefix]["read_hits"], 65)
+reads_hits = load_string_decomposition(data_map[prefix]["read_hits"], identity_th)
 ref_hits = load_string_decomposition(data_map[prefix]["ref_hits"], 70)
 ref_name = list(ref_hits.keys())[0]
 
