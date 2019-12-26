@@ -1,0 +1,8 @@
+biopython
+edlib
+numpy
+matplotlib
+pandas
+seaborn
+argparse
+snakemake
