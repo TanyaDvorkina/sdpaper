@@ -29,5 +29,20 @@ All scripts, except `AC_HMMer.snake` and `convert_identites.py`, use Python3. Re
 	process_mismatches.py              generates mismatches statistics based on generate_stats.py output
 	process_abnormal.py                generates statistics for abnormal HORs based on generate_stats.py output
 	draw_identities.py                 MinAlignmentIdentity statistics
+	hor_analysis/					   script for HOR analysis with HiFi reads from T2T project
+	parameters_tuning/				   scripts for building logistic regression
+
+## Datasets
+
+All data used in this work can be found on [T2T github page](https://github.com/nanopore-wgs-consortium/chm13) or on [Figshare](https://figshare.com/s/076674f298ce7d67701b).
+
+
+## Citation
+
+The String Decomposition Problem and its Applications to Centromere Assembly. *Tatiana Dvorkina, Andrey V. Bzikadze, Pavel A. Pevzner* bioRxiv 2019.12.26.888685; doi: [https://doi.org/10.1101/2019.12.26.888685](https://doi.org/10.1101/2019.12.26.888685)
+
+## Contact
+
+In case of any issues please use [issue tracker](https://github.com/ablab/stringdecomposer/issues) or email directly to [t.dvorkina@spbu.ru](mailto:t.dvorkina@spbu.ru)
 
 
