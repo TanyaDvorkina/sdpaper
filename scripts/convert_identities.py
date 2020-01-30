@@ -75,7 +75,7 @@ def convert_read(decomposition, read, monomers):
                     monomer = s
         secondbest, secondbest_score = None, -1 
         for m in scores:
-            if m != monomer and abs(scores[m] - scores[monomer]) < 5:
+            if m != monomer:
                 if not secondbest or secondbest_score < scores[m]:
                     secondbest, secondbest_score = m, scores[m]
         res.append({"m": monomer, "start": str(d["start"]), "end": str(d["end"]), "score": scores[monomer], \
