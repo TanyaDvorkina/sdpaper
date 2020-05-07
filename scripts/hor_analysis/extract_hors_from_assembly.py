@@ -221,14 +221,40 @@ def update_hor_alignment(seq, name, hor, m_hor):
             idnt = 0
             for p in seq[i: i + len(linear_hor)]:
                 idnt += p["idnt"]
-            new_seq.append({"qid": name, "len": len_hor, "s": seq[i]["s"], "e": seq[i + len(linear_hor)]["e"], "idnt": idnt/len(linear_hor)})
+            new_seq.append({"qid": name, "len": len_hor, "s": seq[i]["s"], "e": seq[i + len(linear_hor) - 1]["e"], "idnt": idnt/len(linear_hor)})
             i += len(linear_hor)
         else:
             new_seq.append(seq[i])
             i += 1
     return new_seq
 
-def build_hor_annotation(dec, max_hor_len_, monomers_mp, filename):
+def known_hors_annotation(annotation, known_hors, hors, hors_lst, h_cnt, min_cnt):
+    for kh in known_hors:
+        annotation_seq = []
+        for a in annotation:
+            annotation_seq.append(a[0] + "[" + str(a[1]) + "]")
+        annotation_str = "_".join(annotation_seq)
+        set_size = len(annotation_seq)
+        annotation_new_lst = annotation_str.split(kh)
+        annotation_new_str = annotation_str.replace(kh, "X")
+        annotation_new_str = annotation_new_str.replace("X_X", "X")
+        new_set_size = len(annotation_new_str.split("_"))
+        cnt = len(annotation_new_lst) - 1
+        #print(kh, new_set_size, cnt)
+        if cnt == 0:
+            continue
+        h_cnt += 1
+        name = "h" + str(h_cnt)
+        hors= build_full_hor(kh, hors, name)
+        hors_lst.append([name, kh])
+        print("\t".join([name, kh.replace("[1]",""), hors[name].replace("[1]",""), str(len(hors[name].split("_"))), str(cnt), \
+                                                     str(set_size - new_set_size), str(new_set_size) ]), flush=True)
+        annotation = update_annotation(annotation, annotation_seq, kh, name)
+        annotation = collapse_annotation(annotation)
+    return annotation, hors, hors_lst, h_cnt
+
+
+def build_hor_annotation(dec, max_hor_len_, monomers_mp, filename, known_hors = []):
     min_idnt, min_cnt, min_weight, min_hor_len, max_hor_len, mult = 75, 5, 5, 2, max_hor_len_, 2
     annotation = []
     seq = []
@@ -240,10 +266,13 @@ def build_hor_annotation(dec, max_hor_len_, monomers_mp, filename):
             annotation.append([dec[i]["qid"], 1, {"s": dec[i]["s"], "e": dec[i]["e"]}])
             seq.append({"qid": dec[i]["qid"], "len": 1, "s": dec[i]["s"], "e": dec[i]["e"], "idnt": dec[i]["idnt"]})
 
-    annotation = collapse_annotation(annotation)
     hors = {}
     hors_lst = []
     h_cnt = 0
+    annotation = collapse_annotation(annotation)
+    if len(known_hors) > 0:
+        annotation, hors, hors_lst, h_cnt = known_hors_annotation(annotation, known_hors, hors, hors_lst, h_cnt, min_cnt)
+
     while True:
         annotation_seq = []
         for a in annotation:
@@ -288,44 +317,20 @@ def build_hor_annotation(dec, max_hor_len_, monomers_mp, filename):
             else:
                 fout.write("\t".join([c["qid"], str(c["len"]), "{0:.2f}".format(c["idnt"]), str(c["s"]), str(c["e"])]) + "\n") 
 
-
-def create_default_valid():
-    valid_mp = {}
-    hor = "ABCDEFGHIJLKMNOPQR"
-    cnt = 0
-    for i in range(len(hor) - 1):
-        valid_mp[hor[i]] = {}
-        for j in range(i + 1, len(hor)):
-            valid_mp[hor[i]][hor[j]] = j - i
-    return valid_mp
-
-def build_name(j, i):
-    if j < 26:
-        mono = chr(ord("A") + j) + str(i)
-    else:
-        mono = "Z" + str(i) + str(j-26)
-    return mono
-
-def create_numbered_valid():
-    valid_mp = {}
-    for i in range(5):
-        for j in range(30):
-            mono = build_name(j, i)
-            valid_mp[mono] = {}
-            for k in range(j + 1, 30):
-                mono2 = build_name(k, i)
-                valid_mp[mono][mono2] = k - j
-    return valid_mp
-
-def create_cen7_valid():
-    valid_mp = {}
-    hors = ["ABCDEFG", "HIJLKMNOPQRSTUV"]
-    for hor in hors:
-        for i in range(len(hor) - 1):
-            valid_mp[hor[i]] = {}
-            for j in range(i + 1, len(hor)):
-                valid_mp[hor[i]][hor[j]] = j - i
-    return valid_mp
+def build_known_hors(lst):
+    known_hors = []
+    for c in lst:
+        s, e = c[0], c[1]
+        kh = []
+        kh_rc = []
+        for i in range(s, e + 1):
+            kh.append("m" + str(i) + "[1]")
+            kh_rc.append("m" + str(i) + "'[1]")
+        known_hors.append("_".join(kh[::-1]))
+        known_hors.append("_".join(kh))
+        known_hors.append("_".join(kh_rc))
+        known_hors.append("_".join(kh_rc[::-1]))
+    return known_hors
 
 ref = load_fasta(sys.argv[1], "map")
 monomers = load_fasta(sys.argv[2])
@@ -334,4 +339,15 @@ filename = sys.argv[4]
 max_hor_len = int(sys.argv[5])
 name = list(ref.keys())[0]
 
-build_hor_annotation(dec[name], max_hor_len, monomers_mp, filename)
+lst2 = [[1,4], [5,14], [15, 24]]
+lst3 = [[1, 17], [55, 64]]
+lst7 = [[1, 6], [7, 22]]
+lst8 = [[1, 11]]
+lst10 = [[35, 42], [53, 60], [184, 201]]
+lst12 = [[1, 8], [17, 34]]
+lst16 = [[1,10], [11, 22], [23, 33]]
+lst19 = [[1, 6], [7, 23], [24, 36], [37, 51], [52, 83], [84, 99], [5, 6]]
+lst20 = [[1, 16], [17, 24], [25, 35], [36, 46], [47, 54]]
+known_hors = build_known_hors(lst2)
+print(known_hors)
+build_hor_annotation(dec[name], max_hor_len, monomers_mp, filename, known_hors)
