@@ -8,6 +8,9 @@ from Bio import SearchIO
 from Bio.SeqRecord import SeqRecord
 from Bio.Align.Applications import ClustalwCommandline
 
+import argparse
+import os, shutil
+
 def edist(lst):
     if len(str(lst[0])) == 0:
         return 100500
@@ -193,41 +196,46 @@ def construct_consensus(clusters):
                     max_score = s
             if max_score != "-":
                 s_consensus += max_score
-        print(cl, s_consensus)
+        #print(cl, s_consensus)
         name = cl.split("/")[-1].split(".")[0]
         seq_consensus.append(make_record(Seq(s_consensus), name + "_" + str(len(s_consensus)), name + "_" + str(len(s_consensus))))
     return seq_consensus
 
-prefix = "/".join(sys.argv[1].split("/")[:-1]) + "/nonmono_regions"
-print(prefix)
-reads = load_fasta(sys.argv[1], "map")
-# for r in reads:
-#     print(str(reads[r].seq[445217: 445527]))
-#     print(str(reads[r].seq[449632: 449942]))
-# exit(-1)
-regions = load_nomono_regions(sys.argv[2], reads)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Searches for non-monomeric regions')
+    parser.add_argument('sequences', help='fasta-file with long reads or genomic sequences')
+    parser.add_argument('decomposition', help='tsv-file with sequences decomposition')
+    parser.add_argument('output', help='output directory')
 
+    args = parser.parse_args()
 
-cnt = 0
-seqs = []
-for r in regions:
-    for region in regions[r]:
-        if region["e"] -  region["s"] > 200:
-            print(r, len(regions[r]), region["s"],  region["e"], region["e"] -  region["s"])
-            print(region["seq"])
-            seqs.append(Seq(region["seq"]))
-            cnt += 1
+    prefix = args.output
+    if os.path.isdir(prefix):
+        shutil.rmtree(prefix)
+    os.mkdir(prefix)
+    reads = load_fasta(args.sequences, "map")
+    regions = load_nomono_regions(args.decomposition, reads)
 
-print("Found", cnt, "potential non-monomeric regions in", len(regions), "reads")
-print("Clustering regions..")
-clusters = cluster_by_outer_ed(seqs)
-print("Saving clusters to", prefix)
-filenames = save_clusters(clusters, prefix)
-print("Constructing consensus..")
-consensus = construct_consensus(filenames)
-print("Saving consensus", prefix + "/consensus_monomers.fasta")
-consensus = sorted(consensus, key = lambda x: -int(x.id.split("_")[1]))
-save_fasta(prefix + "/consensus_monomers.fasta", consensus)
+    cnt = 0
+    seqs = []
+    for r in regions:
+        for region in regions[r]:
+            if region["e"] -  region["s"] > 200:
+                print(r, len(regions[r]), region["s"],  region["e"], region["e"] -  region["s"])
+                #print(region["seq"])
+                seqs.append(Seq(region["seq"]))
+                cnt += 1
+
+    print("Found", cnt, "potential non-monomeric regions in", len(regions), "reads")
+    print("Clustering regions..")
+    clusters = cluster_by_outer_ed(seqs)
+    print("Saving clusters to", prefix)
+    filenames = save_clusters(clusters, prefix)
+    print("Constructing consensus..")
+    consensus = construct_consensus(filenames)
+    print("Saving potential non-monomeric regions to ", prefix + "/consensus_regions.fasta")
+    consensus = sorted(consensus, key = lambda x: -int(x.id.split("_")[1]))
+    save_fasta(prefix + "/consensus_regions.fasta", consensus)
 
 
 
