@@ -253,6 +253,75 @@ def known_hors_annotation(annotation, known_hors, hors, hors_lst, h_cnt, min_cnt
         annotation = collapse_annotation(annotation)
     return annotation, hors, hors_lst, h_cnt
 
+def cluster_hors(hors, hors_lst, monomers_mp):
+    clustered_hors = {}
+    processed = []
+    for h in hors_lst:
+        m_h = set(hors[h[0]].replace("[1]", "").split("_"))
+        related_hors = []
+        related_monomers = []
+        for ph in processed:
+            m_ph = set(hors[ph].replace("[1]", "").split("_") )
+            if len(m_ph & m_h) > 0:
+                related_hors.append(ph)
+                related_monomers.append(m_ph)
+                m_h = m_h - m_ph
+        print(h[0], hors[h[0]], related_hors, related_monomers)
+        if len(related_hors) == 0:
+            clustered_hors[h[0]] = monomers_mp[hors[h[0]].replace("[1]", "").split("_")[0]].split(".")[0]
+            print(clustered_hors[h[0]])
+            processed.append(h[0])
+            continue
+        substrs = []
+        for m in hors[h[0]].replace("[1]", "").split("_"):
+            rc = m[-1] == "'"
+            if len(substrs) != 0 and (not rc and int(substrs[-1][-1][1:]) + 1 == int(m[1:]) or rc and  int(substrs[-1][-1][1:-1]) + 1 == int(m[1:-1])):
+                add = True
+                for ms in related_monomers:
+                    if m in ms and substrs[-1][-1] not in ms:
+                        add = False
+                        break
+                if add:
+                    substrs[-1].append(m)
+                else:
+                    substrs.append([m])
+            else:
+                substrs.append([m])
+        # for s in substrs:
+        #     print("_".join(s))
+        name = []
+        cur_hor = -1
+        for s in substrs:
+            prev_hor = cur_hor
+            for i in range(len(related_hors)):
+                if s[0] in related_monomers[i]:
+                    cur_hor = i
+                    break
+            rc = s[0][-1] == "'"
+            monomer_name = monomers_mp[s[0][:-1]] if rc else monomers_mp[s[0]]
+            #print(s[0], cur_hor, related_monomers)
+            cur_hor_name = monomer_name.split(".")[0]
+            if prev_hor != cur_hor:
+                name.append(cur_hor_name)
+            is_full = False
+            if hors[related_hors[i]].replace("[1]", "") == "_".join(s):
+                is_full = True
+            if is_full:
+                name.append("F")
+            else:
+                if rc:
+                    first, last = monomer_name.split(".")[1] + "'", monomers_mp[s[-1][:-1]].split(".")[1] + "'"
+                else:
+                    first, last = monomer_name.split(".")[1], monomers_mp[s[-1]].split(".")[1]
+                if first == last:
+                    name.append(first)
+                else:
+                    name.append(first + "-" + last)
+        print("_".join(name))
+        clustered_hors[h[0]] = "_".join(name)
+    return clustered_hors
+
+
 
 def build_hor_annotation(dec, max_hor_len_, monomers_mp, filename, known_hors = []):
     min_idnt, min_cnt, min_weight, min_hor_len, max_hor_len, mult = 75, 5, 5, 2, max_hor_len_, 2
@@ -310,12 +379,15 @@ def build_hor_annotation(dec, max_hor_len_, monomers_mp, filename, known_hors = 
     for n in hors_lst:
         seq = update_hor_alignment(seq, n[0], n[1], hors[n[0]])
 
+    clustered_hors = cluster_hors(hors, hors_lst, monomers_mp)
+    prev = 0
     with open(filename, "w") as fout:
         for c in seq:
             if c["qid"] in monomers_mp:
-                fout.write("\t".join([monomers_mp[c["qid"]], str(c["len"]), "{0:.2f}".format(c["idnt"]), str(c["s"]), str(c["e"])]) + "\n") 
+                fout.write("\t".join([monomers_mp[c["qid"]], str(c["len"]), "{0:.2f}".format(c["idnt"]), str(c["s"]), str(c["e"]), str(c["s"] - prev)]) + "\n")
             else:
-                fout.write("\t".join([c["qid"], str(c["len"]), "{0:.2f}".format(c["idnt"]), str(c["s"]), str(c["e"])]) + "\n") 
+                fout.write("\t".join([clustered_hors[c["qid"]], str(c["len"]), "{0:.2f}".format(c["idnt"]), str(c["s"]), str(c["e"]), str(c["s"] - prev)]) + "\n")
+            prev = c["e"]
 
 def build_known_hors(lst):
     known_hors = []
@@ -348,6 +420,6 @@ lst12 = [[1, 8], [17, 34]]
 lst16 = [[1,10], [11, 22], [23, 33]]
 lst19 = [[1, 6], [7, 23], [24, 36], [37, 51], [52, 83], [84, 99], [5, 6]]
 lst20 = [[1, 16], [17, 24], [25, 35], [36, 46], [47, 54]]
-known_hors = build_known_hors(lst2)
+known_hors = build_known_hors(lst20)
 print(known_hors)
 build_hor_annotation(dec[name], max_hor_len, monomers_mp, filename, known_hors)
