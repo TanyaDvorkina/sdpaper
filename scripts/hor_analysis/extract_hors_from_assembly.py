@@ -47,32 +47,34 @@ def load_dec(filename, monomers_seq, ref):
                 rev = True
                 qseqid = qseqid[:-1]
             qseqid = qseqid.split()[0]
-            if idnt >= 75:
+            if idnt >= 75 and not qseqid.startswith("NM") and qseqid.startswith("S"):
                 monomers.add(qseqid)
                 reads_mapping[sseqid].append({"qid": qseqid, "s": s, "e": e, "rev": rev, "idnt": idnt})
             else:
-                reads_mapping[sseqid].append({"qid": "?","s": s, "e": e, "rev": rev, "idnt": idnt})
+                reads_mapping[sseqid].append({"qid": "?","s": s, "e": e, "rev": False, "idnt": idnt})
 
-    new_ref = {}
-    new_reads_mapping = {}
-    for r in reads_mapping:
-        num_rev = 0
-        for mp in reads_mapping[r]:
-            num_rev += int(mp["rev"])
-        if num_rev*2 > len(reads_mapping[r]):
-            print(r)
-            name, start, end = ref[r].id.split("_")
-            start, end = int(start), int(end)
-            new_reads_mapping[r + "'"] = []
-            for mp in reads_mapping[r]:
-                new_reads_mapping[r + "'"].append({"qid": mp["qid"], "s":end - mp["e"], "e": end - mp["s"], "rev": not mp["rev"], "idnt": mp["idnt"]})
-            new_reads_mapping[r + "'"] = new_reads_mapping[r + "'"][::-1]
-            new_ref[r + "'"] = make_record(ref[r].seq.reverse_complement(), ref[r].id + "'", ref[r].name + "'")
-        else:
-            new_reads_mapping[r] = reads_mapping[r][:]
-            new_ref[r] = ref[r]
+    new_ref = ref # {}
+    new_reads_mapping = reads_mapping #{}
+    # for r in reads_mapping:
+    #     num_rev = 0
+    #     for mp in reads_mapping[r]:
+    #         num_rev += int(mp["rev"])
+    #     if num_rev*2 > len(reads_mapping[r]):
+    #         print(r)
+    #         name = ref[r].id.split(":")[0]
+    #         start, end = ref[r].id.split(":")[1].split("-")
+    #         print(name, start, end)
+    #         start, end = int(start), int(end)
+    #         new_reads_mapping[r + "'"] = []
+    #         for mp in reads_mapping[r]:
+    #             new_reads_mapping[r + "'"].append({"qid": mp["qid"], "s":end - mp["e"], "e": end - mp["s"], "rev": not mp["rev"], "idnt": mp["idnt"]})
+    #         new_reads_mapping[r + "'"] = new_reads_mapping[r + "'"][::-1]
+    #         new_ref[r + "'"] = make_record(ref[r].seq.reverse_complement(), ref[r].id + "'", ref[r].name + "'")
+    #     else:
+    #         new_reads_mapping[r] = reads_mapping[r][:]
+    #         new_ref[r] = ref[r]
 
-    reads_mapping = {}
+    reads_mapping = {} 
     for r in new_reads_mapping:
         reads_mapping[r] = new_reads_mapping[r][:]
     print(len(monomers))
@@ -186,12 +188,21 @@ def find_potential_hors(annotation, annotation_seq, min_hor_len, max_hor_len, ho
                 len_monomer_subseq += annotation[end_ind][1]
             subseq.append(annotation_seq[end_ind])
             end_ind += 1
-            if len_monomer_subseq < max_hor_len:
+            if min_hor_len < len_monomer_subseq < max_hor_len:
                 subseq_str = "_".join(subseq)
+                #dirty hack
+                allowed = True
+                hors_set = set()
+                for h in subseq:
+                    h_name, h_freq = h.split("[")[0], int(h.split("[")[1].split("]")[0])
+                    if h_name.startswith("h") and (h_name in hors_set or h_freq > 1):
+                        allowed = False
+                    hors_set.add(h_name)
+
                 if "?" in subseq_str:
                     print(subseq_str)
                     exit(-1)
-                if subseq_str not in potential_hors:
+                if subseq_str not in potential_hors and allowed:
                     annotation_new_lst = annotation_str.split(subseq_str)
                     annotation_new_str = annotation_str.replace(subseq_str, "X")
                     annotation_new_str = annotation_new_str.replace("X_X", "X")
@@ -269,7 +280,10 @@ def update_hor_alignment(seq, name, hor, m_hor):
 
 def known_hors_annotation(reads_annotation, known_hors, hors, hors_lst, h_cnt, min_cnt):
     hors_log = []
+    rev_comp_hors = []
     for kh in known_hors:
+        rev_comp_hors.append("_".join([x[:-len("[1]")] + "'[1]" for x in kh.split("_")][::-1]))
+    for kh in known_hors + rev_comp_hors:
         cnt = 0
         set_size, new_set_size = 0, 0
         for r in reads_annotation:
@@ -305,84 +319,67 @@ def known_hors_annotation(reads_annotation, known_hors, hors, hors_lst, h_cnt, m
 
     return reads_annotation, hors, hors_lst, h_cnt, hors_log
 
+def print_range(start, prev, prev_orient):
+    add = ""
+    if prev_orient:
+        add = "'"
+    if start != prev:
+        res = str(start) + "-" + str(prev) + add
+    else:
+        res = str(prev) + add
+    return res
+
 def cluster_hors(hors, hors_lst, monomers_mp, known_hors):
     clustered_hors = {}
-    processed = []
+    rev_comp_hors = []
+    for kh in known_hors:
+        rev_comp_hors.append("_".join([x[:-len("[1]")] + "'[1]" for x in kh.split("_")][::-1]))
     for h in hors_lst:
-        m_h = set(hors[h[0]].replace("[1]", "").split("_"))
-        related_hors = []
-        related_monomers = []
-        for ph in processed:
-            m_ph = set(hors[ph].replace("[1]", "").split("_") )
-            if len(m_ph & m_h) > 0:
-                related_hors.append(ph)
-                related_monomers.append(m_ph)
-                m_h = m_h - m_ph
-        print(h[0], hors[h[0]], related_hors, related_monomers)
-        if len(related_hors) == 0:
-            clustered_hors[h[0]] = monomers_mp[hors[h[0]].replace("[1]", "").split("_")[0]].split(".")[0]
-            print(clustered_hors[h[0]])
-            processed.append(h[0])
+        seqstr =  hors[h[0]]
+        is_known = False
+        for kh in known_hors + rev_comp_hors:
+            if seqstr == kh:
+                is_known = True
+                clustered_hors[h[0]] = monomers_mp[kh.replace("[1]", "").split("_")[0]].split(".")[0]
+                if "'" in kh:
+                    clustered_hors[h[0]] = monomers_mp[kh.replace("[1]", "").split("_")[0]].split(".")[0] + "'"
+                print(h[0], clustered_hors[h[0]])
+        if is_known:
             continue
-        for j in range(len(known_hors)):
-            m_ph = set(known_hors[j].replace("[1]", "").split("_") )
-            if len(m_ph & m_h) > 0:
-                related_hors.append("kh" + str(j))
-                related_monomers.append(m_ph)
-                m_h = m_h - m_ph
-        substrs = []
-        for m in hors[h[0]].replace("[1]", "").split("_"):
-            rc = m[-1] == "'"
-            if len(substrs) != 0 and (not rc and int(substrs[-1][-1][1:]) + 1 == int(m[1:]) or rc and  int(substrs[-1][-1][1:-1]) + 1 == int(m[1:-1])):
-                add = True
-                for ms in related_monomers:
-                    if m in ms and substrs[-1][-1] not in ms:
-                        add = False
-                        break
-                if add:
-                    substrs[-1].append(m)
-                else:
-                    substrs.append([m])
+        ms = seqstr.replace("[1]", "").split("_")
+        original_ms = []
+        for m in ms:
+            original_ms.append(monomers_mp[m])
+        res = []
+        print(seqstr)
+        print(original_ms)
+        hor_name, prev, prev_orient, start = None, None, None, None
+        for m in original_ms:
+            cur_hor_name = m.split(".")[0]
+            orient = m.endswith("'")
+            m_id_in_hor =  int(m.split(".")[1]) if not orient else int(m.split(".")[1][:-1])
+            if hor_name == cur_hor_name:
+                if not(orient == prev_orient and ((orient and m_id_in_hor + 1 == prev) or (not orient and m_id_in_hor == prev + 1))):
+                    res.append(print_range(start, prev, prev_orient))
+                    start = m_id_in_hor
             else:
-                substrs.append([m])
-        # for s in substrs:
-        #     print("_".join(s))
-        name = []
-        cur_hor = -1
-        for s in substrs:
-            prev_hor = cur_hor
-            for i in range(len(related_hors)):
-                if s[0] in related_monomers[i]:
-                    cur_hor = i
-                    break
-            rc = s[0][-1] == "'"
-            monomer_name = monomers_mp[s[0][:-1]] if rc else monomers_mp[s[0]]
-            #print(s[0], cur_hor, related_monomers)
-            cur_hor_name = monomer_name.split(".")[0]
-            if prev_hor != cur_hor:
-                name.append(cur_hor_name)
-            is_full = False
-            if (not related_hors[i].startswith("k")) and hors[related_hors[i]].replace("[1]", "") == "_".join(s):
-                is_full = True
-            if is_full:
-                name.append("F")
-            else:
-                if rc:
-                    first, last = monomer_name.split(".")[1] + "'", monomers_mp[s[-1][:-1]].split(".")[1] + "'"
-                else:
-                    first, last = monomer_name.split(".")[1], monomers_mp[s[-1]].split(".")[1]
-                if first == last:
-                    name.append(first)
-                else:
-                    name.append(first + "-" + last)
-        print("_".join(name))
-        clustered_hors[h[0]] = "_".join(name)
+                if start != None:
+                    res.append(print_range(start, prev, prev_orient))
+                res.append(cur_hor_name)
+                hor_name = cur_hor_name
+                start = m_id_in_hor
+            prev, prev_orient = m_id_in_hor, orient
+
+        if start != None:
+            res.append(print_range(start, prev, prev_orient))
+            
+        print("_".join(res))
+        clustered_hors[h[0]] = "_".join(res)
     return clustered_hors
 
 
-
 def build_hor_annotation(reads_dec, max_hor_len_, monomers_mp, filename, known_hors = []):
-    min_idnt, min_cnt, min_weight, min_hor_len, max_hor_len, mult = 75, 5, 5, 2, max_hor_len_, 2
+    min_idnt, min_cnt, min_weight, min_hor_len, max_hor_len, mult = 75, 3, 10, 5, max_hor_len_, 2
     annotation = {}
     seq = {}
     for read in reads_dec:
@@ -460,15 +457,25 @@ def build_hor_annotation(reads_dec, max_hor_len_, monomers_mp, filename, known_h
     for h in hors_log:
         h = [clustered_hors[h[0]]] + h
         print("\t".join(h), flush=True)
-    prev = 0
+    prev, prev_qid, start = 0, "", 0
     with open(filename, "w") as fout:
         for r in seq:
             for c in seq[r]:
-                if c["qid"] in monomers_mp:
-                    fout.write("\t".join([r, monomers_mp[c["qid"]], str(c["len"]), "{0:.2f}".format(c["idnt"]), str(c["s"]), str(c["e"]), str(c["e"] - c["s"] + 1), str(c["s"] - prev)]) + "\n")
+                if c["qid"] == "?":
+                    if prev_qid != "?":
+                        start = c["s"]
+                    prev_qid = "?"
                 else:
-                    fout.write("\t".join([r, clustered_hors[c["qid"]], str(c["len"]), "{0:.2f}".format(c["idnt"]), str(c["s"]), str(c["e"]), str(c["e"] - c["s"] + 1),  str(c["s"] - prev)]) + "\n")
+                    if prev_qid == "?":
+                        fout.write("\t".join([r, "?", str(-1), "{0:.2f}".format(55.0), str(start), str(prev), str(prev - start + 1), str(-1)]) + "\n")
+                    if c["qid"] in monomers_mp:
+                        fout.write("\t".join([r, monomers_mp[c["qid"]], str(c["len"]), "{0:.2f}".format(c["idnt"]), str(c["s"]), str(c["e"]), str(c["e"] - c["s"] + 1), str(c["s"] - prev)]) + "\n")
+                    else:
+                        fout.write("\t".join([r, clustered_hors[c["qid"]], str(c["len"]), "{0:.2f}".format(c["idnt"]), str(c["s"]), str(c["e"]), str(c["e"] - c["s"] + 1),  str(c["s"] - prev)]) + "\n")
                 prev = c["e"]
+                prev_qid = c["qid"]
+        if prev_qid == "?":
+            fout.write("\t".join([r, "?", str(-1), "{0:.2f}".format(55.0), str(start), str(prev), str(prev - start + 1), str(-1)]) + "\n")
 
 def build_known_hors(lst):
     known_hors = []
@@ -479,10 +486,10 @@ def build_known_hors(lst):
         for i in range(s, e + 1):
             kh.append("m" + str(i) + "[1]")
             kh_rc.append("m" + str(i) + "'[1]")
-        known_hors.append("_".join(kh[::-1]))
+        #known_hors.append("_".join(kh[::-1]))
         known_hors.append("_".join(kh))
-        known_hors.append("_".join(kh_rc))
-        known_hors.append("_".join(kh_rc[::-1]))
+        #known_hors.append("_".join(kh_rc))
+        #known_hors.append("_".join(kh_rc[::-1]))
     return known_hors
 
 ref = load_fasta(sys.argv[1], "map")
@@ -493,7 +500,7 @@ max_hor_len = int(sys.argv[5])
 name = list(ref.keys())[0]
 
 lst2 = [[1,4], [5,14], [15, 24]]
-lst3 = [[1, 17], [55, 64]]
+lst3 = [[1,2],[3,19], [20, 29], [30, 34],[35, 38] ]
 lst7 = [[1, 6], [7, 22]]
 lst8 = [[1, 11]]
 lst10 = [[35, 42], [53, 60], [184, 201]]
@@ -511,7 +518,7 @@ lst11 = [[1,5], [6, 17], [18, 24], [25, 40]]
 lst17 = [[1,14], [15, 28], [29, 44], [45, 54]]
 lst18 = [[1,12], [13, 22], [23, 32], [33, 42], [43, 47]]
 lstX = [[1,12]]
-known_hors = build_known_hors(lst18)
+known_hors = build_known_hors(lst17)
 print(known_hors)
 build_hor_annotation(dec, max_hor_len, monomers_mp, filename, known_hors)
 
